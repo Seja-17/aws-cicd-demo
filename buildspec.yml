@@ -1,0 +1,25 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: ap-southeast-2
+    AWS_ACCOUNT_ID: "726516289147"
+    ECR_REPOSITORY: aws-cicd-demo
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+  pre_build:
+    commands:
+      - export ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPOSITORY"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"
+  build:
+    commands:
+      - ./mvnw -B clean verify
+      - docker build -t "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" .
+  post_build:
+    commands:
+      - docker push "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION"
+      - docker tag "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" "$ECR_URI:latest"
+      - docker push "$ECR_URI:latest"
