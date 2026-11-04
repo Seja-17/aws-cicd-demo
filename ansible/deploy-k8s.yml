@@ -1,0 +1,54 @@
+---
+- name: Deploy and Manage Java Web Application on Kubernetes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    app_name: taskboard
+    manifest_path: "../k8s/deployment.yaml"
+    image_name: "{{ lookup('env', 'IMAGE') | default('cia2taskboard9472.azurecr.io/cia2-taskboard:latest', true) }}"
+    timeout_seconds: 180
+
+  tasks:
+    - name: Verify kubectl CLI tool is available
+      ansible.builtin.command: which kubectl
+      register: kubectl_check
+      changed_when: false
+
+    - name: Verify cluster connectivity
+      ansible.builtin.command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+
+    - name: Display cluster info
+      ansible.builtin.debug:
+        msg: "{{ cluster_info.stdout_lines[0] | default('Cluster connected') }}"
+
+    - name: Render Kubernetes manifest with target image
+      ansible.builtin.shell: |
+        sed "s|__IMAGE__|{{ image_name }}|g" {{ manifest_path }}
+      register: rendered_manifest
+      changed_when: false
+
+    - name: Apply Kubernetes Deployment and Service manifests
+      ansible.builtin.command:
+        cmd: kubectl apply -f -
+        stdin: "{{ rendered_manifest.stdout }}"
+      register: k8s_apply
+      changed_when: "'configured' in k8s_apply.stdout or 'created' in k8s_apply.stdout"
+
+    - name: Wait for Deployment rollout to complete
+      ansible.builtin.command: >
+        kubectl rollout status deployment/{{ app_name }}
+        --timeout={{ timeout_seconds }}s
+      changed_when: false
+
+    - name: Fetch deployed Pods and Service details
+      ansible.builtin.command: kubectl get pods,service -l app={{ app_name }} -o wide
+      register: k8s_status
+      changed_when: false
+
+    - name: Display deployed resources status
+      ansible.builtin.debug:
+        var: k8s_status.stdout_lines

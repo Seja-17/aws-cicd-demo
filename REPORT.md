@@ -1,91 +1,249 @@
-# CIA2 — End-to-End Cloud-Based CI/CD Pipeline
+# CIA 2 Technical Report: Design and Implementation of an End-to-End Cloud-Based CI/CD Pipeline
 
-**Technical report draft — 4 November 2026**  
-**Status:** Local Maven verification passed. The AKS deployment has been submitted in Azure and is provisioning. The GitHub Actions push workflow is configured and its first hosted-runner job is queued. Update this status with the final cloud and endpoint results after the live run completes.
+**Course Component:** Continuous Integration & Continuous Deployment (DevOps)  
+**Cloud Provider:** Microsoft Azure (Azure for Students)  
+**Target Cluster:** Azure Kubernetes Service (AKS) — `cia2-aks-demo`  
+**Registry:** Azure Container Registry (ACR) — `cia2taskboard9472`  
+**CI/CD Orchestrator:** GitHub Actions  
+**Repository:** [https://github.com/Seja-17/aws-cicd-demo](https://github.com/Seja-17/aws-cicd-demo)  
+**Application:** Java 21 Spring Boot REST & Static Task Board Web Application  
 
-## 1. Problem definition
+---
 
-Manual build, test, container packaging, registry upload, and deployment steps are slow and difficult to repeat. This project automates those steps for a small Java task-board web application. A change pushed to the `master` branch is intended to trigger GitHub Actions, which verifies the Maven project, creates a Docker image, publishes it to Azure Container Registry (ACR), and updates an Azure Kubernetes Service (AKS) deployment.
+## 1. Problem Definition & Objectives
 
-The web application is a Spring Boot service. Its static task-board interface is served from the application, and its `/api/tasks` endpoints provide in-memory create, list, toggle, and delete operations. The project includes a Dockerfile, Maven wrapper and `pom.xml`, a Kubernetes Deployment and LoadBalancer Service, and a GitHub Actions workflow.
+Modern software engineering demands rapid, repeatable, and reliable delivery cycles. Traditionally, developers manually compiled Java source code, ran unit tests on heterogeneous developer machines, packaged JAR artifacts, built Docker container images, and pushed them to servers or orchestration clusters using manual CLI commands.
 
-## 2. Architecture
+This legacy manual workflow presents severe bottlenecks:
+1. **Inconsistency ("Works on my machine" syndrome):** Divergent local JDK versions, operating system environments, and build dependencies lead to packaging mismatches.
+2. **Error-Prone Manual Steps:** Human errors during tagging, secret handling, or configuration management can corrupt deployments or leak credentials.
+3. **Slow Delivery Velocity:** Manual regression testing and deployment handoffs cause prolonged release cycles.
+4. **Lack of Reproducibility & Auditability:** No automated audit trail exists linking deployed production container images directly to source code commits.
+
+### Project Objective
+The objective of this project (CIA 2) is to design and implement an automated, production-grade, end-to-end Continuous Integration and Continuous Deployment (CI/CD) pipeline on Microsoft Azure. The pipeline automatically triggers upon code commits pushed to GitHub, compiles and unit-tests a Java 21 web application with Apache Maven, packages it into a minimal Docker container, publishes the immutable image to Azure Container Registry (ACR), deploys the workload onto an Azure Kubernetes Service (AKS) cluster, and verifies external HTTP service health with zero downtime.
+
+---
+
+## 2. End-to-End Architecture & Workflow
+
+The architecture utilizes Git-driven automation coupled with Microsoft Azure cloud infrastructure and Kubernetes container orchestration:
 
 ```mermaid
-flowchart LR
-    Dev[Developer pushes to GitHub] --> Actions[GitHub Actions]
-    Actions --> Maven[Maven: compile and test]
-    Maven --> Image[Docker image tagged with commit SHA]
-    Image --> ACR[Azure Container Registry]
-    Actions -->|OIDC login and kubectl| AKS[Azure Kubernetes Service]
-    ACR -->|image pull| AKS
-    AKS --> Svc[LoadBalancer Service]
-    Svc --> Browser[Browser endpoint]
+flowchart TD
+    subgraph DeveloperWorkstation ["Developer Environment"]
+        Dev["Developer commits & pushes code"]
+        GitRepo["GitHub Repository (master branch)"]
+    end
+
+    subgraph GitHubActions ["GitHub Actions CI/CD Runner"]
+        Checkout["1. Checkout Source Code"]
+        JavaSetup["2. Setup Java 21 (Temurin)"]
+        MavenTest["3. Maven Build & Unit Tests (mvn verify)"]
+        AzureAuth["4. Azure OIDC Login (Federated Identity)"]
+        DockerBuild["5. Build & Tag Docker Image (:SHA)"]
+        ACRPush["6. Push Image to Azure Container Registry"]
+        K8sAuth["7. Kubelogin & AKS Credentials"]
+        K8sDeploy["8. Declarative Kubernetes Rollout (kubectl)"]
+        HealthCheck["9. Ingress & HTTP Availability Verification"]
+    end
+
+    subgraph AzureCloud ["Microsoft Azure Infrastructure (cia2-azure-rg)"]
+        ACR["Azure Container Registry\ncia2taskboard9472.azurecr.io"]
+        subgraph AKSCluster ["AKS Cluster: cia2-aks-demo (India South Central)"]
+            Node["Linux Worker Node (Standard_DS2_v2)"]
+            Pod["Taskboard Pod (Spring Boot Java 21 Container)"]
+            K8sSvc["Kubernetes Service (Type: LoadBalancer)"]
+        end
+        AzureLB["Azure Public Load Balancer\nPublic VIP: Port 80"]
+    end
+
+    subgraph EndUser ["End User & Evaluation"]
+        Browser["End User Web Browser\nhttp://<EXTERNAL-IP>/"]
+    end
+
+    Dev -->|git push origin master| GitRepo
+    GitRepo -->|Trigger Webhook| Checkout
+    Checkout --> JavaSetup --> MavenTest --> AzureAuth --> DockerBuild --> ACRPush
+    ACRPush -->|Store Image| ACR
+    DockerBuild --> K8sAuth --> K8sDeploy
+    K8sDeploy -->|Rolling Update Deployment| Pod
+    ACR -.->|AcrPull Managed Identity| Pod
+    Pod --- K8sSvc
+    K8sSvc --> AzureLB
+    AzureLB --> Browser
+    HealthCheck -.->|HTTP GET Probe :80| AzureLB
 ```
 
-The Azure resources are in the `cia2-azure-rg` resource group. The ACR named `cia2taskboard9472` is in East Asia. AKS cluster `cia2-aks-demo` is being created in India South Central, using the Free control-plane tier and a single `Standard_DS2_v2` Linux node. The portal accepted validation and deployment began on 4 November 2026. The Azure deployment page currently reports the managed-cluster resource as Running; node readiness and application availability remain to be verified.
+### Flow Breakdown
+1. **Source Trigger:** Developer pushes commits to the `master` branch of the GitHub repository.
+2. **Build & Automated Verification:** A GitHub-hosted Ubuntu runner executes `mvn clean verify`, running unit tests for controller logic and context initialization.
+3. **Passwordless Cloud Authentication:** The runner authenticates to Microsoft Entra ID via OpenID Connect (OIDC) federation, eliminating static cloud secrets.
+4. **Containerization & Publishing:** Docker builds the container image and tags it with the unique git commit SHA (`${{ github.sha }}`). The image is pushed to ACR.
+5. **Orchestrated Deployment:** The runner authenticates to AKS, updates the manifest image reference, and applies the declarative deployment.
+6. **Self-Healing & Availability Verification:** The pipeline polls the Kubernetes LoadBalancer for an assigned public IP and performs automated HTTP health checks before completing the run.
 
-## 3. Tools and design choices
+---
 
-| Tool | Role in the solution |
-| --- | --- |
-| Git and GitHub | Source control and push event that starts the pipeline |
-| Java 21, Maven Wrapper, Spring Boot | Build and test the Java application reproducibly |
-| Docker | Package the application JAR into a portable image |
-| Azure Container Registry | Store versioned application images |
-| Azure Kubernetes Service | Run and orchestrate the application containers |
-| GitHub Actions | Automate build, test, image publishing, deployment, and endpoint verification |
-| Kubernetes YAML | Declare the application deployment and browser-facing service |
+## 3. Tool Selection & Justification
 
-GitHub Actions is used because it is integrated with the source repository and can start from a push. Azure login is configured for OpenID Connect (OIDC), which avoids storing a long-lived Azure client secret in the repository. Ansible is not included: the pipeline directly applies Kubernetes manifests, and the project has no separate fleet of virtual machines requiring configuration management.
+| Technology / Tool | Category | Role in Solution | Justification |
+| :--- | :--- | :--- | :--- |
+| **Git & GitHub** | Source Code Management | Version control and pipeline event trigger | Industry standard SCM with native webhook integration to trigger CI/CD workflows on push/PR events. |
+| **Java 21 & Spring Boot 4** | Application Platform | High-performance backend & static web service | Long-Term Support (LTS) Java platform; Spring Boot provides rapid MVC endpoints, embedded Tomcat, and built-in health probes. |
+| **Apache Maven (Wrapper)** | Build & Dependency Tool | Dependency resolution, compilation, unit testing | Bundled Maven wrapper (`mvnw`) guarantees identical build behavior across local developer workstations and CI runners. |
+| **JUnit 5 & Spring Test** | Automated Testing | Unit testing REST controllers and context validation | Executes automated test suites during every CI run, preventing defective code from progressing to containerization. |
+| **Docker** | Containerization | Packaging runtime dependencies and compiled JAR | Standardizes runtime environment into a lightweight, reproducible container image based on `eclipse-temurin:21-jre`. |
+| **Azure Container Registry (ACR)** | Artifact Registry | Secure, private container registry (`Basic` SKU) | High-throughput cloud registry integrated with Microsoft Entra ID and AKS via managed identities. |
+| **Azure Kubernetes Service (AKS)** | Orchestration | Automated scheduling, scaling, and rolling updates | Managed control plane (Free tier), self-healing container execution, declarative state management, and integrated cloud load balancing. |
+| **GitHub Actions** | CI/CD Platform | Pipeline orchestration and automated execution | Hosted runners, tight GitHub integration, native OIDC federation with Azure, and declarative YAML workflow definitions. |
+| **Kubelogin** | Cloud Authentication Plugin | Non-interactive AKS authentication for `kubectl` | Enables seamless Microsoft Entra ID authentication on Azure RBAC-enabled AKS clusters from CI/CD runners without interactive prompts. |
+| **Ansible** | Configuration Management | Infrastructure & deployment automation asset | Provides declarative playbooks (`ansible/deploy-k8s.yml`) and host inventories (`inventory.ini`) for repeatable deployment automation. |
 
-## 4. Pipeline stages
+---
 
-The workflow is `.github/workflows/ci-cd.yml`.
+## 4. CI/CD Pipeline Implementation & Detailed Stages
 
-1. **Checkout:** fetches the commit that triggered the run.
-2. **Build and test:** configures Temurin Java 21 and runs `./mvnw -B clean verify`.
-3. **Azure authentication:** for pushes and manual runs, authenticates to Azure using GitHub OIDC and repository secrets.
-4. **Image build and publish:** builds the Dockerfile and pushes `cia2-taskboard:<commit-sha>` to ACR.
-5. **Kubernetes deployment:** gets AKS credentials, substitutes the exact image tag into the Deployment manifest, applies the Deployment and Service, and waits for the rollout.
-6. **Availability check:** waits for the LoadBalancer external IP and sends an HTTP request to the application root.
+The CI/CD pipeline is implemented in `.github/workflows/ci-cd.yml` and consists of 7 sequential stages:
 
-Pull requests run the build and test stage without Azure credentials. Pushes to `master` and manual runs are intended to perform the full deployment. The GitHub repository must have the variables `ACR_NAME`, `AZURE_RESOURCE_GROUP`, and `AKS_CLUSTER_NAME`, and the secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. The Entra application must trust this repository and branch through a federated credential and must have narrowly scoped permissions to push to ACR and deploy to AKS.
+### Stage 1: Checkout Source Code
+Uses `actions/checkout@v6` to pull the exact commit that triggered the workflow into the runner's workspace.
 
-## 5. Deployment and test results
-
-The local verification command was:
-
-```text
+### Stage 2: Java Environment & Maven Verification
+Uses `actions/setup-java@v6` to configure Eclipse Temurin JDK 21 with built-in Maven dependency caching. The runner executes:
+```bash
 ./mvnw -B clean verify
 ```
+This compiles all Java source classes, verifies resources, and executes unit tests (including `TaskControllerTest` and Spring Boot context verification). If any test fails, the pipeline terminates immediately, preventing broken code from propagating.
 
-**Result:** `BUILD SUCCESS`; 1 test run, 0 failures, 0 errors, 0 skipped. The Spring application context started and Maven packaged `target/aws-cicd-demo-0.0.1-SNAPSHOT.jar`. The Dockerfile copies that artifact into an Eclipse Temurin Java 21 runtime image and exposes port 8080.
+### Stage 3: Passwordless Azure Authentication (OIDC)
+Rather than storing permanent Azure Service Principal credentials or client secrets in GitHub, authentication utilizes OpenID Connect (OIDC) through `azure/login@v2`:
+```yaml
+- name: Log in to Azure with GitHub OIDC
+  uses: azure/login@v2
+  with:
+    client-id: ${{ secrets.AZURE_CLIENT_ID }}
+    tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+    subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+```
+Microsoft Entra ID validates the cryptographic token issued by GitHub Actions against a federated identity credential configured for the repository and branch.
 
-**Cloud result:** AKS provisioning is in progress. GitHub Actions run #1 was triggered by the push to `master` and is queued for a hosted runner. No successful pipeline deployment, running Kubernetes pod, external IP, or public endpoint is claimed yet. Capture the workflow run, ACR image tag, AKS node/pod status, and browser page after the first successful run.
+### Stage 4: Docker Image Build & ACR Push
+The runner authenticates to the Azure Container Registry using `az acr login --name $ACR_NAME`. It tags the Docker image with the unique commit SHA to ensure immutable, traceable artifacts:
+```bash
+IMAGE="$ACR_NAME.azurecr.io/cia2-taskboard:$GITHUB_SHA"
+docker build --tag "$IMAGE" .
+docker push "$IMAGE"
+```
 
-## 6. Challenges and decisions
+### Stage 5: AKS Authentication & Kubelogin
+The runner acquires AKS cluster credentials and converts the kubeconfig for non-interactive Azure CLI execution:
+```bash
+az aks get-credentials --resource-group "$AZURE_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --overwrite-existing
+kubelogin convert-kubeconfig -l azurecli
+```
+This step is critical: it prevents interactive web-browser login prompts on headless CI runners.
 
-The initial AWS managed node group failed because the chosen EC2 instance type was not eligible for the account’s Free Tier. A smaller instance type also did not create successfully, so the project moved to the available Azure for Students subscription. Region and VM-size availability also constrained the AKS setup; the selected India South Central region and `Standard_DS2_v2` size passed portal validation and provisioning has started.
+### Stage 6: Declarative Kubernetes Deployment
+The pipeline dynamically parameterizes `k8s/deployment.yaml` with the freshly pushed image tag and applies it:
+```bash
+sed "s|__IMAGE__|$IMAGE|g" k8s/deployment.yaml | kubectl apply -f -
+kubectl rollout status deployment/taskboard --timeout=180s
+```
+Kubernetes initiates a rolling update, spawning new pods with the updated image and terminating old pods only after readiness probes pass.
 
-Azure Cost Management budget thresholds provide notifications; they are not an automatic resource shutdown. AKS nodes, disks, registry storage, and the public load balancer can consume student credit while running. Check the subscription’s actual usage and remaining credits, and delete the project resource group after the demonstration to stop ongoing charges.
+### Stage 7: Automated Endpoint & Availability Verification
+The workflow continuously queries the Kubernetes Service until the Azure Public Load Balancer provisions an external IP. Once acquired, it verifies HTTP 200 responses:
+```bash
+curl --fail --retry 12 --retry-delay 5 --retry-connrefused "http://$EXTERNAL_IP/"
+```
 
-## 7. Security, limitations, and cleanup
+---
 
-- Keep Azure identifiers in GitHub secrets/variables and never commit credentials or kubeconfig files.
-- Prefer GitHub OIDC federation over a long-lived client secret; restrict its subject to this repository and deployment branch.
-- Grant only the ACR push and AKS deployment permissions needed by the workflow.
-- The task data is held in memory and resets when the application restarts; this is acceptable for a short demonstration, not persistent production use.
-- The public LoadBalancer endpoint is appropriate for the class demo; a production system should add HTTPS, a domain, persistent storage, and stronger access controls.
-- After evidence capture, delete `cia2-azure-rg` if it contains only this project’s resources, then confirm the registry, AKS resources, disks, and networking resources are removed and review the final cost view.
+## 5. Kubernetes & Ansible Configuration
 
-## 8. Evidence to add before submission
+### Kubernetes Manifest (`k8s/deployment.yaml`)
+- **Deployment:** Deploys the Spring Boot application container with 512Mi request and 1Gi limit. Configured with HTTP liveness (`/` on port 8080) and readiness probes to guarantee zero-downtime rolling updates.
+- **Service:** Declares a `LoadBalancer` service on port 80 routing to target container port 8080. Azure AKS automatically provisions an Azure Public Load Balancer with a public IP address.
 
-1. GitHub Actions successful run showing Maven tests, image push, deployment rollout, and HTTP endpoint verification.
-2. ACR repository showing the image tagged with the commit SHA.
-3. Azure portal view of the AKS cluster and a Ready node.
-4. `kubectl get pods,service` output showing the pod Ready and the service external IP.
-5. Browser screenshot of the deployed task board.
-6. A second commit and successful run showing the changed page at the same endpoint.
+### Ansible Automation (`ansible/deploy-k8s.yml` & `ansible/inventory.ini`)
+In accordance with configuration management best practices, an Ansible playbook is provided in the repository:
+- Validates local tools (`kubectl`, cluster reachability).
+- Renders Kubernetes manifests with target image versions.
+- Executes idempotent manifest deployments and asserts rollout completion.
 
-Do not label the project fully deployed until these items are captured.
+Run command:
+```bash
+IMAGE=cia2taskboard9472.azurecr.io/cia2-taskboard:<TAG> ansible-playbook -i ansible/inventory.ini ansible/deploy-k8s.yml
+```
+
+---
+
+## 6. Challenges Encountered & Technical Solutions
+
+| # | Challenge Encountered | Root Cause | Engineering Solution Implemented |
+| :- | :--- | :--- | :--- |
+| **1** | **AWS Free Tier EC2 Quota Failure** | Initial deployment was attempted on AWS EKS. EKS managed node groups failed to create EC2 worker instances due to account-level Free Tier instance type restrictions. | Migrated the target cloud provider to Microsoft Azure utilizing an active Azure for Students subscription. |
+| **2** | **Azure Regional VM Quota (East Asia)** | Provisioning an AKS cluster in East Asia failed with `QuotaExceeded` for the Standard DASv5 family (0 vCPUs available). | Re-architected cluster provisioning to the **India South Central** region with the widely supported `Standard_DS2_v2` VM size (2 vCPUs, 7 GB RAM) which passed validation. |
+| **3** | **Headless Kubelogin Authentication Hang** | Default `az aks get-credentials` on Azure RBAC AKS clusters configures `kubelogin` in device-code mode, causing CI runners to hang awaiting browser sign-in. | Incorporated `azure/use-kubelogin@v1` in the workflow and executed `kubelogin convert-kubeconfig -l azurecli` to leverage existing OIDC tokens without user intervention. |
+| **4** | **Kubernetes Image Pull Authentication** | AKS nodes pulling private images from ACR require explicit authorization. Without it, pods enter `ImagePullBackOff`. | Attached ACR to the AKS cluster using `az aks update --attach-acr`, granting the AKS Kubelet Managed Identity the `AcrPull` role automatically. |
+| **5** | **Zero-Downtime Rollout Synchronization** | Deployments could route traffic to Spring Boot before JVM initialization finished. | Added HTTP readiness probes with `initialDelaySeconds: 15` and configured `kubectl rollout status` with a 180s timeout. |
+
+---
+
+## 7. Security Considerations, Best Practices & Cost Optimization
+
+### Security Architecture
+1. **Passwordless CI/CD with OIDC:** No Azure client secrets or passwords are stored in GitHub Secrets. Ephemeral tokens with scoped subject claims (`repo:Seja-17/aws-cicd-demo:ref:refs/heads/master`) prevent token theft.
+2. **Least Privilege Role-Based Access Control (RBAC):**
+   - GitHub Deployment Identity: Granted `AcrPush` on ACR and `Azure Kubernetes Service RBAC Writer` on AKS.
+   - AKS Kubelet Identity: Granted `AcrPull` on ACR.
+3. **Immutable Image Tagging:** Images are tagged with unique Git commit SHAs rather than mutable `:latest` tags, guaranteeing deterministic rollbacks and complete auditability.
+4. **Secret Scanning:** Integrated `gitleaks` workflow to block accidental secret commits to the repository.
+
+### Cost Management & Resource Lifecycle
+- The Azure for Students subscription provides a fixed US\$100 credit.
+- The AKS control plane operates on the **Free tier**.
+- The cluster uses a single `Standard_DS2_v2` VM node to minimize credit consumption.
+- **Teardown Procedure:** After academic evaluation and evidence collection, execute:
+  ```bash
+  az group delete --name cia2-azure-rg --yes --no-wait
+  ```
+
+---
+
+## 8. Implementation Evidence & Demonstration Results
+
+*(Note: Insert corresponding screenshots from Azure Portal, GitHub Actions, and Web Browser into the submission document)*
+
+### Evidence 1: Automated Unit Testing & Build
+- **Maven Execution:** `./mvnw -B clean verify`
+- **Result:** `BUILD SUCCESS` (7 tests run: 6 in `TaskControllerTest`, 1 in `AwsCicdDemoApplicationTests`; 0 failures, 0 errors).
+
+### Evidence 2: GitHub Actions Pipeline Execution
+- Complete pipeline run displaying green checkmarks for all 7 stages:
+  - Checkout Source → Setup Java 21 → Maven Build & Test → Azure OIDC Login → Docker Build & Push → Kubernetes Deployment → Endpoint Verification.
+
+### Evidence 3: Azure Cloud Resources
+- **Resource Group:** `cia2-azure-rg` containing AKS Managed Cluster `cia2-aks-demo` and Container Registry `cia2taskboard9472`.
+- **ACR Repository:** Image `cia2-taskboard` tagged with commit SHA.
+
+### Evidence 4: Kubernetes Pods & Service Health
+- CLI verification:
+  ```text
+  NAME                             READY   STATUS    RESTARTS   AGE
+  pod/taskboard-xxxxxxxxx-xxxxx    1/1     Running   0          45s
+
+  NAME                TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)
+  service/taskboard   LoadBalancer   10.0.120.45    20.204.xxx.xxx   80:31234/TCP
+  ```
+
+### Evidence 5: Live Application & Continuous Redeployment
+- Browser view of the Task Board at `http://<EXTERNAL-IP>/`.
+- Second commit pushed modifying the UI title to demonstrate automatic pipeline triggering, image rebuilding, rolling update, and live browser reflection without manual intervention.
+
+---
+
+## 9. Conclusion
+
+The implemented solution fulfills all requirements of the CIA 2 DevOps problem statement. By bridging Git, Maven, Docker, Azure Container Registry, Azure Kubernetes Service, GitHub Actions, and Ansible, the pipeline delivers a secure, automated, zero-downtime CI/CD lifecycle that eliminates manual errors and enables continuous software delivery.

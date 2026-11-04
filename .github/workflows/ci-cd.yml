@@ -69,6 +69,7 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --name "${{ vars.AKS_CLUSTER_NAME }}" \
             --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
 
       - name: Deploy to Kubernetes
         if: github.event_name != 'pull_request'
