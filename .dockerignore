@@ -1,4 +1,8 @@
 .git
-.idea
+.github
+.mvn
+target
 *.iml
-.DS_Store
+.idea
+.vscode
+README.md
