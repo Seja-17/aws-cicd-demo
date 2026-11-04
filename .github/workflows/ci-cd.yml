@@ -44,8 +44,10 @@ jobs:
       - name: Set up kubelogin
         if: github.event_name != 'pull_request'
         uses: azure/use-kubelogin@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          kubelogin-version: latest
+          kubelogin-version: 'v0.1.7'
 
       - name: Log in to Azure Container Registry
         if: github.event_name != 'pull_request'
