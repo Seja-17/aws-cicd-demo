@@ -28,7 +28,7 @@ Add these **secrets** after creating a Microsoft Entra application/service princ
 | `AZURE_TENANT_ID` | Directory (tenant) ID |
 | `AZURE_SUBSCRIPTION_ID` | Azure for Students subscription ID |
 
-Grant that identity the minimum roles needed to push to ACR and deploy to AKS. Configure the federated credential for this repository and the `master` branch. Do not put credentials in source files.
+Grant that identity `AcrPush` on the registry and the AKS Cluster User and AKS RBAC Writer roles on the cluster. Configure the federated credential for this repository and the `master` branch. Do not put credentials in source files.
 
 ## Pipeline and demo
 

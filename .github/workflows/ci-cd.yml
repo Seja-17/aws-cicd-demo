@@ -58,7 +58,6 @@ jobs:
           az aks get-credentials \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --name "${{ vars.AKS_CLUSTER_NAME }}" \
-            --admin \
             --overwrite-existing
 
       - name: Deploy to Kubernetes
