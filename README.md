@@ -6,7 +6,7 @@ Spring Boot task board deployed to Azure Kubernetes Service (AKS) by GitHub Acti
 
 - Resource group: `cia2-azure-rg`
 - ACR: `cia2taskboard9472` (East Asia)
-- Planned AKS cluster: `cia2-aks-demo` (East Asia, Free control-plane tier, one Linux node)
+- AKS cluster: `cia2-aks-demo` (India South Central, Free control-plane tier, one `Standard_DS2_v2` Linux node)
 
 The AKS node, registry, disk, and public load balancer can incur charges. The Azure budget is an alert and does not stop resources automatically. Review Cost Management and remove the resource group after the demonstration.
 

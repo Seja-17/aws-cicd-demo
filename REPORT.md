@@ -1,7 +1,7 @@
 # CIA2 — End-to-End Cloud-Based CI/CD Pipeline
 
 **Technical report draft — 4 November 2026**  
-**Status:** Application build and test pass locally. Azure deployment is pending VM-family quota approval and GitHub-to-Azure identity configuration. Replace this status and add the requested screenshots after completing the live demonstration.
+**Status:** Local Maven verification passed. The AKS deployment has been submitted in Azure and is provisioning. The GitHub Actions push workflow is configured and its first hosted-runner job is queued. Update this status with the final cloud and endpoint results after the live run completes.
 
 ## 1. Problem definition
 
@@ -23,7 +23,7 @@ flowchart LR
     Svc --> Browser[Browser endpoint]
 ```
 
-The planned Azure resources are in the `cia2-azure-rg` resource group. The ACR named `cia2taskboard9472` was created in East Asia. The AKS cluster is configured in the portal as `cia2-aks-demo`, using the Free control-plane tier and one Linux node. Azure currently reports that the selected `Standard_D2as_v5` node needs 2 vCPUs from the Standard DASv5 family, while the subscription quota is 0. A quota request for a total limit of 2 was submitted and is under review. The cluster has not been created yet.
+The Azure resources are in the `cia2-azure-rg` resource group. The ACR named `cia2taskboard9472` is in East Asia. AKS cluster `cia2-aks-demo` is being created in India South Central, using the Free control-plane tier and a single `Standard_DS2_v2` Linux node. The portal accepted validation and deployment began on 4 November 2026. The Azure deployment page currently reports the managed-cluster resource as Running; node readiness and application availability remain to be verified.
 
 ## 3. Tools and design choices
 
@@ -62,13 +62,13 @@ The local verification command was:
 
 **Result:** `BUILD SUCCESS`; 1 test run, 0 failures, 0 errors, 0 skipped. The Spring application context started and Maven packaged `target/aws-cicd-demo-0.0.1-SNAPSHOT.jar`. The Dockerfile copies that artifact into an Eclipse Temurin Java 21 runtime image and exposes port 8080.
 
-**Cloud result:** not yet verified. The AKS cluster is blocked on quota approval. No successful GitHub Actions deployment, running Kubernetes pod, external IP, or public application endpoint is claimed in this draft. After the quota is approved, capture the workflow run, ACR image tag, AKS node/pod status, and browser page here.
+**Cloud result:** AKS provisioning is in progress. GitHub Actions run #1 was triggered by the push to `master` and is queued for a hosted runner. No successful pipeline deployment, running Kubernetes pod, external IP, or public endpoint is claimed yet. Capture the workflow run, ACR image tag, AKS node/pod status, and browser page after the first successful run.
 
 ## 6. Challenges and decisions
 
-The initial AWS managed node group failed because the chosen EC2 instance type was not eligible for the account’s Free Tier. A smaller instance type also did not create successfully, and the EC2 Instances view showed no instance. The project therefore moved to the available Azure for Students subscription and its credit balance. The Azure Student subscription is not a guarantee that each selected VM size is available: the current AKS node pool is blocked by a zero regional VM-family quota. The quota request is awaiting Azure review.
+The initial AWS managed node group failed because the chosen EC2 instance type was not eligible for the account’s Free Tier. A smaller instance type also did not create successfully, so the project moved to the available Azure for Students subscription. Region and VM-size availability also constrained the AKS setup; the selected India South Central region and `Standard_DS2_v2` size passed portal validation and provisioning has started.
 
-Azure Cost Management budget thresholds provide notifications; they are not an automatic resource shutdown. The selected node’s portal estimate was about US$86.87 per month before other resources such as disks, registry storage, and the public load balancer. A ten-day run is not guaranteed to stay below a chosen credit limit until actual resource prices and the subscription balance are checked. Delete the project resource group after the demonstration and inspect Cost Management for any remaining resources.
+Azure Cost Management budget thresholds provide notifications; they are not an automatic resource shutdown. AKS nodes, disks, registry storage, and the public load balancer can consume student credit while running. Check the subscription’s actual usage and remaining credits, and delete the project resource group after the demonstration to stop ongoing charges.
 
 ## 7. Security, limitations, and cleanup
 
