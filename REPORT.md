@@ -164,7 +164,7 @@ curl --fail --retry 12 --retry-delay 5 --retry-connrefused "http://$EXTERNAL_IP/
 
 ### Kubernetes Manifest (`k8s/deployment.yaml`)
 - **Deployment:** Deploys the Spring Boot application container with 512Mi request and 1Gi limit. Configured with HTTP liveness (`/` on port 8080) and readiness probes to guarantee zero-downtime rolling updates.
-- **Service:** Declares a `LoadBalancer` service on port 80 routing to target container port 8080. Azure AKS automatically provisions an Azure Public Load Balancer with a public IP address.
+- **Service:** Declares a `LoadBalancer` service on port 8080 routing to target container port 8080. Azure AKS automatically provisions an Azure Public Load Balancer with a public IP address.
 
 ### Ansible Automation (`ansible/deploy-k8s.yml` & `ansible/inventory.ini`)
 In accordance with configuration management best practices, an Ansible playbook is provided in the repository:

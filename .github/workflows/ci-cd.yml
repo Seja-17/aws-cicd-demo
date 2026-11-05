@@ -93,5 +93,5 @@ jobs:
             kubectl describe service taskboard
             exit 1
           fi
-          curl --fail --retry 12 --retry-delay 5 --retry-connrefused "http://$EXTERNAL_IP/" -o /dev/null
-          echo "Application is responding at http://$EXTERNAL_IP/"
+          curl --fail --retry 12 --retry-delay 5 --retry-connrefused "http://$EXTERNAL_IP:8080/" -o /dev/null
+          echo "Application is responding at http://$EXTERNAL_IP:8080/"

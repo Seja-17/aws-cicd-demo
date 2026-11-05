@@ -34,7 +34,7 @@ Grant that identity `AcrPush` on the registry and the AKS Cluster User and AKS R
 
 1. Push a commit to `master`; GitHub Actions runs `.github/workflows/ci-cd.yml`.
 2. Confirm the Maven build and test steps pass, and the image appears in ACR with the commit SHA tag.
-3. Confirm the AKS rollout is ready in the workflow log. The Kubernetes Service exposes the app on port 80; wait for its external IP, then open `http://<EXTERNAL-IP>`.
+3. Confirm the AKS rollout is ready in the workflow log. The Kubernetes Service exposes the app on port 8080; wait for its external IP, then open `http://<EXTERNAL-IP>:8080`.
 4. Change visible text in `src/main/resources/static/index.html`, commit and push, then show the succeeding Actions run and updated page.
 
 For local inspection, `./mvnw spring-boot:run` serves the application at `http://localhost:8080`.
